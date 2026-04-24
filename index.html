@@ -1,15 +1,141 @@
 <!DOCTYPE html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Myra Beauty - Premium Cosmetics</title>
+  <script src="https://www.gstatic.com/firebasejs/10.13.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.1/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.13.1/firebase-auth-compat.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: { extend: { colors: { 'myra-pink': '#FF69B4', 'myra-purple': '#9370DB' } } }
+    }
+  </script>
+  <style>
+    .hero { background: linear-gradient(135deg, #FF69B4 0%, #9370DB 100%); }
+    .product-hover { transition: all 0.3s; }
+    .product-hover:hover { transform: scale(1.05); }
+  </style>
+</head>
+<body class="bg-gradient-to-br from-pink-50 to-purple-50">
+  
+  <!-- Navbar -->
+  <nav class="bg-white shadow-lg fixed w-full z-50">
+    <div class="max-w-7xl mx-auto px-4 py-4 flex justify-between items-center">
+      <h1 class="text-3xl font-bold bg-gradient-to-r from-myra-pink to-myra-purple bg-clip-text text-transparent">Myra</h1>
+      <div class="flex space-x-6">
+        <a href="#products" class="hover:text-myra-pink">Products</a>
+        <a href="#cart" class="hover:text-myra-pink relative">
+          Cart (<span id="cart-count">0</span>)
+        </a>
+        <button id="login-btn" class="bg-myra-pink text-white px-4 py-2 rounded-full">Login</button>
+      </div>
+    </div>
+  </nav>
 
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Vite + React</title>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
-    <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+  <!-- Hero -->
+  <section class="hero text-white pt-24 pb-32 text-center">
+    <div class="max-w-4xl mx-auto px-4">
+      <h2 class="text-6xl md:text-7xl font-serif mb-6 animate-fade-in">Premium Beauty</h2>
+      <p class="text-2xl mb-8 opacity-90">Cosmetics & Skincare | Nykaa Style Luxury</p>
+      <a href="#products" class="bg-white text-myra-purple px-12 py-4 rounded-full text-xl font-bold hover:shadow-2xl">Shop Now</a>
+    </div>
+  </section>
 
-  </body>
+  <!-- Products -->
+  <section id="products" class="py-24 max-w-7xl mx-auto px-4">
+    <h3 class="text-4xl font-bold text-center mb-16 bg-gradient-to-r from-myra-purple to-myra-pink bg-clip-text text-transparent">Featured Products</h3>
+    <div id="product-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+      <!-- Dynamic products load here -->
+    </div>
+  </section>
+
+  <!-- Cart Modal -->
+  <div id="cart-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div class="bg-white p-8 rounded-3xl max-w-md w-full mx-4 max-h-96 overflow-y-auto">
+      <h3 class="text-3xl font-bold mb-6">Your Cart</h3>
+      <div id="cart-items"></div>
+      <div class="mt-6 flex justify-between text-xl font-bold">
+        <span>Total: Rs <span id="cart-total">0</span></span>
+        <button id="checkout-btn" class="bg-myra-pink text-white px-8 py-3 rounded-full">Checkout</button>
+      </div>
+      <button id="close-cart" class="mt-4 text-gray-500">Close</button>
+    </div>
+  </div>
+
+  <!-- Login Modal -->
+  <div id="login-modal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div class="bg-white p-8 rounded-3xl max-w-md w-full mx-4">
+      <h3 class="text-3xl font-bold mb-6">Login to Myra</h3>
+      <input id="email" type="email" placeholder="Email" class="w-full p-4 border rounded-xl mb-4">
+      <input id="password" type="password" placeholder="Password" class="w-full p-4 border rounded-xl mb-4">
+      <button id="sign-in" class="w-full bg-myra-purple text-white py-4 rounded-xl mb-4">Sign In</button>
+      <button id="sign-up" class="w-full bg-myra-pink text-white py-4 rounded-xl mb-4">Sign Up</button>
+      <button id="google-signin" class="w-full bg-white border-2 border-gray-200 py-4 rounded-xl flex items-center justify-center">
+        <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" width="20" class="mr-2"> Continue with Google
+      </button>
+      <button id="close-login" class="mt-4 text-gray-500">Close</button>
+    </div>
+  </div>
+
+  <script>
+    // === YOUR FIREBASE CONFIG HERE (Step 1 copy-paste) ===
+    const firebaseConfig = {
+      apiKey: "YOUR_API_KEY",
+      authDomain: "myra-beauty.firebaseapp.com",
+      projectId: "myra-beauty",
+      // ... paste full config
+    };
+    firebase.initializeApp(firebaseConfig);
+    const db = firebase.firestore();
+    const auth = firebase.auth();
+
+    // State
+    let cart = JSON.parse(localStorage.getItem('myra-cart')) || [];
+    let user = null;
+
+    // Load Products
+    async function loadProducts() {
+      const snapshot = await db.collection('products').get();
+      const grid = document.getElementById('product-grid');
+      grid.innerHTML = '';
+      snapshot.docs.forEach(doc => {
+        const data = doc.data();
+        const card = `
+          <div class="bg-white p-6 rounded-3xl shadow-lg product-hover cursor-pointer">
+            <img src="${data.imageUrl}" class="w-full h-64 object-cover rounded-2xl mb-4">
+            <h4 class="text-2xl font-bold mb-2">${data.name}</h4>
+            <p class="text-myra-pink text-3xl font-bold mb-4">₹${data.price}</p>
+            <p class="text-gray-600 mb-4">${data.description}</p>
+            <button onclick="addToCart('${doc.id}')" class="w-full bg-gradient-to-r from-myra-pink to-myra-purple text-white py-4 rounded-xl font-bold">Add to Cart</button>
+          </div>
+        `;
+        grid.innerHTML += card;
+      });
+    }
+
+    // Cart Functions
+    function addToCart(productId) {
+      cart.push({ id: productId, qty: 1 });
+      localStorage.setItem('myra-cart', JSON.stringify(cart));
+      updateCartUI();
+    }
+
+    function updateCartUI() {
+      document.getElementById('cart-count').textContent = cart.length;
+      // Cart modal items...
+    }
+
+    // Auth
+    document.getElementById('login-btn').onclick = () => document.getElementById('login-modal').classList.remove('hidden');
+    // Add other auth handlers...
+
+    // Init
+    loadProducts();
+    updateCartUI();
+    auth.onAuthStateChanged(u => user = u);
+  </script>
+</body>
 </html>
